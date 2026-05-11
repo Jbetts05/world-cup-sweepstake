@@ -18,17 +18,17 @@ const localDataPath =
   process.env.WORLD_CUP_DATA_PATH ??
   join(process.cwd(), "data", "tournament-state.local.json");
 const backend = process.env.WORLD_CUP_STORAGE_BACKEND ?? "local";
-const repository = createStateRepository(backend);
+let repository: StateRepository | undefined;
 
 export async function readStateSnapshot(): Promise<StateSnapshot | undefined> {
-  return repository.read();
+  return getRepository().read();
 }
 
 export async function writeStateSnapshot(
   data: StoredTournamentData,
   etag?: string,
 ): Promise<StateSnapshot> {
-  return repository.write(data, etag);
+  return getRepository().write(data, etag);
 }
 
 export function isStateWriteConflict(error: unknown): boolean {
@@ -47,6 +47,12 @@ function createStateRepository(storageBackend: string): StateRepository {
   }
 
   return new LocalFileStateRepository(localDataPath);
+}
+
+function getRepository(): StateRepository {
+  repository ??= createStateRepository(backend);
+
+  return repository;
 }
 
 class LocalFileStateRepository implements StateRepository {
