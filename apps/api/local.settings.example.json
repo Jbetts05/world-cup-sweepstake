@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "WC2026_API_BASE_URL": "https://api.wc2026api.com",
+    "WC2026_API_KEY": "",
+    "ADMIN_SECRET": "",
+    "WORLD_CUP_SEED_MODE": "empty",
+    "WORLD_CUP_DATA_PATH": ""
+  }
+}

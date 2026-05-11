@@ -1,0 +1,25 @@
+{
+  "name": "world-cup-sweepstake",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20 <23",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build": "npm run build --workspace @world-cup/shared && npm run build --workspace @world-cup/api && npm run build --workspace @world-cup/web",
+    "typecheck": "npm run typecheck --workspace @world-cup/shared && npm run typecheck --workspace @world-cup/api && npm run typecheck --workspace @world-cup/web",
+    "lint": "npm run lint --workspace @world-cup/web",
+    "test:e2e": "playwright test",
+    "dev:web": "npm run dev --workspace @world-cup/web",
+    "dev:api": "npm run start --workspace @world-cup/api"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "typescript": "~6.0.2"
+  }
+}

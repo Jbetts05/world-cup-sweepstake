@@ -1,0 +1,20 @@
+{
+  "name": "@world-cup/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/src/functions/*.js",
+  "scripts": {
+    "prebuild": "npm run build --workspace @world-cup/shared",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/functions/*.ts --bundle --platform=node --target=node20 --format=cjs --outdir=dist/src/functions --external:@azure/functions --sourcemap",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "npm run build && func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.7.3",
+    "@world-cup/shared": "file:../../packages/shared"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.1",
+    "typescript": "~6.0.2"
+  }
+}

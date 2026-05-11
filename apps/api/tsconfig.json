@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@world-cup/shared": ["../../packages/shared/src/index.ts"],
+      "@world-cup/shared/fixtures/mockState": [
+        "../../packages/shared/src/fixtures/mockState.ts"
+      ]
+    },
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "../../packages/shared/src"]
+}

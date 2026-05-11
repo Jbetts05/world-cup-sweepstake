@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration and secrets
+.env
+.env.local
+local.settings.json
+apps/api/local.settings.json
+apps/api/data/*.local.json
+apps/web/.env.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
