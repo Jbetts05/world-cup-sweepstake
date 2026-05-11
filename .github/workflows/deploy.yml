@@ -39,7 +39,7 @@ jobs:
       - name: Package API
         run: |
           node scripts/package-api.mjs
-          npm install --omit=dev --prefix apps/api/deploy
+          npm install --omit=dev --prefix apps/api/deploy --workspaces=false --include-workspace-root=false --package-lock=false --no-save
 
       - name: Deploy web
         uses: Azure/static-web-apps-deploy@v1
