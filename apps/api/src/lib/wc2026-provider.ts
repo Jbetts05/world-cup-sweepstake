@@ -7,6 +7,16 @@ interface Wc2026Snapshot {
   standings: Standing[];
 }
 
+interface Wc2026MatchesSnapshot {
+  generatedAt: string;
+  matches: Match[];
+}
+
+interface Wc2026StandingsSnapshot {
+  generatedAt: string;
+  standings: Standing[];
+}
+
 interface Wc2026TeamRecord {
   id?: number | string;
   name?: string;
@@ -69,15 +79,16 @@ interface Wc2026GroupRecord {
 }
 
 const defaultBaseUrl = "https://api.wc2026api.com";
+const worldCupGroups = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
 export async function fetchWc2026Snapshot(): Promise<Wc2026Snapshot> {
-  const [teamsPayload, groupsPayload, matchesPayload] = await Promise.all([
+  const [teamsPayload, groupPayloads, matchesPayload] = await Promise.all([
     fetchProviderJson("/teams"),
-    fetchProviderJson("/groups"),
+    fetchWc2026GroupPayloads(),
     fetchProviderJson("/matches"),
   ]);
   const teams = normalizeTeams(extractArray<Wc2026TeamRecord>(teamsPayload));
-  const groups = extractArray<Wc2026GroupRecord>(groupsPayload);
+  const groups = normalizeGroupPayloads(groupPayloads);
   const matches = normalizeMatches(extractArray<Wc2026MatchRecord>(matchesPayload), teams);
   const standings = normalizeStandings(groups, teams);
   const stagedTeams = applyTeamStages(teams, standings, matches);
@@ -88,6 +99,38 @@ export async function fetchWc2026Snapshot(): Promise<Wc2026Snapshot> {
     matches,
     standings,
   };
+}
+
+export async function fetchWc2026Matches(teams: Team[]): Promise<Wc2026MatchesSnapshot> {
+  const matchesPayload = await fetchProviderJson("/matches");
+
+  return {
+    generatedAt: new Date().toISOString(),
+    matches: normalizeMatches(extractArray<Wc2026MatchRecord>(matchesPayload), teams),
+  };
+}
+
+export async function fetchWc2026GroupStandings(
+  teams: Team[],
+): Promise<Wc2026StandingsSnapshot> {
+  const groupPayloads = await fetchWc2026GroupPayloads();
+
+  return {
+    generatedAt: new Date().toISOString(),
+    standings: normalizeStandings(normalizeGroupPayloads(groupPayloads), teams),
+  };
+}
+
+export function applyProviderTeamStages(
+  teams: Team[],
+  standings: Standing[],
+  matches: Match[],
+): Team[] {
+  return applyTeamStages(teams, standings, matches);
+}
+
+async function fetchWc2026GroupPayloads(): Promise<unknown[]> {
+  return Promise.all(worldCupGroups.map((group) => fetchProviderJson(`/groups/${group}`)));
 }
 
 async function fetchProviderJson(path: string): Promise<unknown> {
@@ -404,6 +447,40 @@ function extractArray<T>(payload: unknown): T[] {
   throw new Error("WC2026 API returned an unexpected response shape.");
 }
 
+function normalizeGroupPayloads(payloads: unknown[]): Wc2026GroupRecord[] {
+  return payloads.map((payload, index) => {
+    const group = extractGroupRecord(payload);
+    const fallbackName = worldCupGroups[index] ?? String(index + 1);
+
+    return {
+      ...group,
+      name: group.name ?? group.group_name ?? fallbackName,
+    };
+  });
+}
+
+function extractGroupRecord(payload: unknown): Wc2026GroupRecord {
+  if (Array.isArray(payload)) {
+    const [first] = payload;
+
+    if (isRecord(first)) {
+      return first as Wc2026GroupRecord;
+    }
+  }
+
+  if (isRecord(payload)) {
+    const candidates = [payload.data, payload.group, payload.result, payload];
+
+    for (const candidate of candidates) {
+      if (isRecord(candidate)) {
+        return candidate as Wc2026GroupRecord;
+      }
+    }
+  }
+
+  throw new Error("WC2026 API returned an unexpected group response shape.");
+}
+
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== "string" && typeof value !== "number") {
     throw new Error(`WC2026 API response is missing ${label}.`);
@@ -420,4 +497,8 @@ function requiredString(value: unknown, label: string): string {
 
 function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

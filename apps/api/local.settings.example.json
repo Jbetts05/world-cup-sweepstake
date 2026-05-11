@@ -7,6 +7,11 @@
     "WC2026_API_KEY": "",
     "ADMIN_SECRET": "",
     "WORLD_CUP_SEED_MODE": "empty",
-    "WORLD_CUP_DATA_PATH": ""
+    "WORLD_CUP_DATA_PATH": "",
+    "WORLD_CUP_STORAGE_BACKEND": "local",
+    "WORLD_CUP_STORAGE_CONNECTION_STRING": "",
+    "WORLD_CUP_STATE_CONTAINER": "world-cup-state",
+    "WORLD_CUP_STATE_BLOB": "tournament-state.json",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": ""
   }
 }

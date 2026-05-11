@@ -17,7 +17,7 @@ A public World Cup sweepstake website for assigning participants to countries, t
 - Shared domain types, progression helpers, and fixture-only seed data live in `packages/shared`.
 - `GET /api/state`, `GET /api/teams`, and `GET /api/fixtures` return normalized public tournament data from the API.
 - Organiser endpoints support participant entry/removal before draw, fixture team import, one-time draw locking, and fixture sync through `/api/organiser/*`.
-- Local API state persists to `apps/api/data/tournament-state.local.json` by default and is ignored by Git.
+- Local API state persists to `apps/api/data/tournament-state.local.json` by default and is ignored by Git. In Azure, the same state is stored as an ETag-protected JSON blob so draw locking and admin writes remain atomic.
 - The browser must never call WC2026 API directly; provider access belongs in the API only.
 - Azure Functions reserves built-in admin routes, so organiser write endpoints should use `/api/organiser/*`.
 - Organiser write endpoints enforce `ADMIN_SECRET` with the `x-admin-secret` request header; do not rely on Static Web Apps route roles or function keys as the only protection.
@@ -34,6 +34,16 @@ A public World Cup sweepstake website for assigning participants to countries, t
 ## Data source
 
 WC2026 API is the only football data source. The API will sync and normalize provider data into cached application state, then the public site reads that cache through our API. The WC2026 API key must be stored in Azure Function app settings or GitHub Actions secrets, never in frontend code.
+
+The production timer runs every 20 minutes and gates provider calls by UK local time: `/matches` is synced during the 17:00-05:00 match window, and `/groups/A-L` standings are synced at 17:00, 21:00, 01:00, and 05:00. This keeps the expected daily request count under the WC2026 API free-tier budget.
+
+## Production state storage
+
+Deployed Functions should set `WORLD_CUP_STORAGE_BACKEND=azure-blob`. The API then stores tournament state in Azure Blob Storage using `WORLD_CUP_STORAGE_CONNECTION_STRING` or `AzureWebJobsStorage`, `WORLD_CUP_STATE_CONTAINER`, and `WORLD_CUP_STATE_BLOB`. Writes use blob ETags for optimistic concurrency so a locked draw is updated as one state document rather than being partially written across multiple entities.
+
+## Observability
+
+Set `APPLICATIONINSIGHTS_CONNECTION_STRING` on the deployed Function App to enable Azure Functions host telemetry. The app also emits structured `telemetry_event` traces for backend admin actions and the allowlisted frontend events `page_view`, `organiser_opened`, `sync_clicked`, `draw_clicked`, and `bracket_viewed`. Telemetry properties are sanitized and do not include participant names or admin secrets.
 
 ## Flag assets
 
@@ -55,7 +65,7 @@ Prize split:
 
 ## Local development
 
-Recommended runtime is Node.js 20 for Azure Functions compatibility. Node 22 is also supported by the local Vite tooling.
+Recommended runtime is Node.js 24 for Azure Functions compatibility.
 
 Install dependencies:
 
@@ -88,6 +98,7 @@ To pull real WC2026 data, set `WC2026_API_KEY` in `apps\api\local.settings.json`
 npm run typecheck
 npm run lint
 npm run build
+npm run package:api
 npm run test:e2e
 ```
 

@@ -5,12 +5,13 @@
   "main": "dist/src/functions/*.js",
   "scripts": {
     "prebuild": "npm run build --workspace @world-cup/shared",
-    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/functions/*.ts --bundle --platform=node --target=node20 --format=cjs --outdir=dist/src/functions --external:@azure/functions --sourcemap",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/functions/*.ts --bundle --platform=node --target=node24 --format=cjs --outdir=dist/src/functions --external:@azure/functions --sourcemap",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "npm run build && func start"
   },
   "dependencies": {
     "@azure/functions": "^4.7.3",
+    "@azure/storage-blob": "^12.31.0",
     "@world-cup/shared": "file:../../packages/shared"
   },
   "devDependencies": {

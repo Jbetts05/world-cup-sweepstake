@@ -9,6 +9,7 @@ import {
   toErrorResponse,
   type ParticipantInput,
 } from "../lib/store";
+import { trackEvent } from "../lib/telemetry";
 
 app.http("saveParticipant", {
   methods: ["POST"],
@@ -22,7 +23,10 @@ app.http("saveParticipant", {
     }
 
     try {
-      return jsonResponse(await saveParticipant(await parseParticipantInput(request)));
+      const state = await saveParticipant(await parseParticipantInput(request));
+      trackEvent("organiser_participant_saved", {}, { participantCount: state.participants.length });
+
+      return jsonResponse(state);
     } catch (error) {
       const response = toErrorResponse(error);
 
@@ -49,7 +53,10 @@ app.http("deleteParticipant", {
     }
 
     try {
-      return jsonResponse(await removeParticipant(id));
+      const state = await removeParticipant(id);
+      trackEvent("organiser_participant_removed", {}, { participantCount: state.participants.length });
+
+      return jsonResponse(state);
     } catch (error) {
       const response = toErrorResponse(error);
 
@@ -69,7 +76,10 @@ app.http("importTeams", {
       return authError;
     }
 
-    return jsonResponse(await importTeamsFromFixture());
+    const state = await importTeamsFromFixture();
+    trackEvent("organiser_teams_imported", { source: state.metadata.provider }, { teamCount: state.teams.length });
+
+    return jsonResponse(state);
   },
 });
 
@@ -85,7 +95,13 @@ app.http("runDraw", {
     }
 
     try {
-      return jsonResponse(await runDraw(), 201);
+      const state = await runDraw();
+      trackEvent("organiser_draw_locked", {}, {
+        participantCount: state.participants.length,
+        assignedTeamCount: state.metadata.assignedTeamCount,
+      });
+
+      return jsonResponse(state, 201);
     } catch (error) {
       const response = toErrorResponse(error);
 
@@ -105,7 +121,13 @@ app.http("syncTournamentData", {
       return authError;
     }
 
-    return jsonResponse(await syncFixtureSnapshot());
+    const state = await syncFixtureSnapshot();
+    trackEvent("organiser_sync_completed", { source: state.metadata.provider }, {
+      teamCount: state.teams.length,
+      matchCount: state.matches.length,
+    });
+
+    return jsonResponse(state);
   },
 });
 

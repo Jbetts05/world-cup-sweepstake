@@ -1,9 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import type {
   Assignment,
-  Draw,
   Match,
   Participant,
   PublicTournamentState,
@@ -18,27 +15,26 @@ import {
   mockTeams,
   mockTournamentState,
 } from "@world-cup/shared/fixtures/mockState";
-import { fetchWc2026Snapshot } from "./wc2026-provider";
-
-export interface StoredTournamentData {
-  generatedAt: string;
-  participants: Participant[];
-  teams: Team[];
-  assignments: Assignment[];
-  matches: Match[];
-  standings: Standing[];
-  source?: PublicTournamentState["metadata"]["source"];
-  draw?: Draw;
-}
+import {
+  isStateWriteConflict,
+  readStateSnapshot,
+  writeStateSnapshot,
+  type StateSnapshot,
+} from "./state-repository";
+import type { StoredTournamentData } from "./stored-state";
+import {
+  applyProviderTeamStages,
+  fetchWc2026GroupStandings,
+  fetchWc2026Matches,
+  fetchWc2026Snapshot,
+} from "./wc2026-provider";
 
 export interface ParticipantInput {
   id?: string;
   fullName: string;
 }
 
-const dataPath =
-  process.env.WORLD_CUP_DATA_PATH ??
-  join(process.cwd(), "data", "tournament-state.local.json");
+const maxMutationAttempts = 3;
 let mutationQueue = Promise.resolve();
 
 export async function getPublicState(): Promise<PublicTournamentState> {
@@ -208,6 +204,38 @@ export async function syncFixtureSnapshot(): Promise<PublicTournamentState> {
   });
 }
 
+export async function syncMatchesFromFixture(): Promise<PublicTournamentState> {
+  return mutateData(async (data) => {
+    if (data.teams.length === 0) {
+      throw new RequestError(409, "Import teams before syncing matches.");
+    }
+
+    const snapshot = await loadMatchesSnapshot(data.teams);
+    data.matches = [...snapshot.matches];
+    data.teams = applyProviderTeamStages(data.teams, data.standings, data.matches);
+    data.source = snapshot.source;
+    touch(data, snapshot.generatedAt);
+
+    return toPublicState(data);
+  });
+}
+
+export async function syncGroupStandingsFromFixture(): Promise<PublicTournamentState> {
+  return mutateData(async (data) => {
+    if (data.teams.length === 0) {
+      throw new RequestError(409, "Import teams before syncing group standings.");
+    }
+
+    const snapshot = await loadGroupStandingsSnapshot(data.teams);
+    data.standings = [...snapshot.standings];
+    data.teams = applyProviderTeamStages(data.teams, data.standings, data.matches);
+    data.source = snapshot.source;
+    touch(data, snapshot.generatedAt);
+
+    return toPublicState(data);
+  });
+}
+
 export class RequestError extends Error {
   constructor(
     readonly status: number,
@@ -226,28 +254,31 @@ export function toErrorResponse(error: unknown): { status: number; message: stri
 }
 
 async function readData(): Promise<StoredTournamentData> {
+  return (await readOrCreateSnapshot()).data;
+}
+
+async function readOrCreateSnapshot(): Promise<StateSnapshot> {
+  const existing = await readStateSnapshot();
+
+  if (existing) {
+    return existing;
+  }
+
+  const initial = createInitialData();
+
   try {
-    const content = await readFile(dataPath, "utf8");
-
-    return JSON.parse(content) as StoredTournamentData;
+    return await writeStateSnapshot(initial);
   } catch (error) {
-    if (isMissingFileError(error)) {
-      const initial = createInitialData();
-      await writeData(initial);
+    if (isStateWriteConflict(error)) {
+      const racedSnapshot = await readStateSnapshot();
 
-      return initial;
+      if (racedSnapshot) {
+        return racedSnapshot;
+      }
     }
 
     throw error;
   }
-}
-
-async function writeData(data: StoredTournamentData): Promise<void> {
-  await mkdir(dirname(dataPath), { recursive: true });
-  const temporaryPath = `${dataPath}.${process.pid}.${randomUUID()}.tmp`;
-
-  await writeFile(temporaryPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, dataPath);
 }
 
 function createInitialData(): StoredTournamentData {
@@ -318,6 +349,52 @@ async function loadFixtureSnapshot(): Promise<{
   throw new RequestError(503, "WC2026_API_KEY is not configured.");
 }
 
+async function loadMatchesSnapshot(teams: Team[]): Promise<{
+  generatedAt: string;
+  matches: Match[];
+  source: PublicTournamentState["metadata"]["source"];
+}> {
+  if (process.env.WC2026_API_KEY?.trim()) {
+    return {
+      ...(await fetchWc2026Matches(teams)),
+      source: "live",
+    };
+  }
+
+  if (process.env.WORLD_CUP_SEED_MODE === "demo") {
+    return {
+      generatedAt: new Date().toISOString(),
+      matches: mockMatches,
+      source: "fixture",
+    };
+  }
+
+  throw new RequestError(503, "WC2026_API_KEY is not configured.");
+}
+
+async function loadGroupStandingsSnapshot(teams: Team[]): Promise<{
+  generatedAt: string;
+  standings: Standing[];
+  source: PublicTournamentState["metadata"]["source"];
+}> {
+  if (process.env.WC2026_API_KEY?.trim()) {
+    return {
+      ...(await fetchWc2026GroupStandings(teams)),
+      source: "live",
+    };
+  }
+
+  if (process.env.WORLD_CUP_SEED_MODE === "demo") {
+    return {
+      generatedAt: new Date().toISOString(),
+      standings: mockStandings,
+      source: "fixture",
+    };
+  }
+
+  throw new RequestError(503, "WC2026_API_KEY is not configured.");
+}
+
 function touch(data: StoredTournamentData, generatedAt: string): StoredTournamentData {
   data.generatedAt = generatedAt;
 
@@ -326,11 +403,28 @@ function touch(data: StoredTournamentData, generatedAt: string): StoredTournamen
 
 function mutateData<T>(mutator: (data: StoredTournamentData) => T | Promise<T>): Promise<T> {
   const result = mutationQueue.then(async () => {
-    const data = await readData();
-    const value = await mutator(data);
-    await writeData(data);
+    for (let attempt = 1; attempt <= maxMutationAttempts; attempt += 1) {
+      const snapshot = await readOrCreateSnapshot();
+      const value = await mutator(snapshot.data);
 
-    return value;
+      try {
+        await writeStateSnapshot(snapshot.data, snapshot.etag);
+
+        return value;
+      } catch (error) {
+        if (isStateWriteConflict(error) && attempt < maxMutationAttempts) {
+          continue;
+        }
+
+        if (isStateWriteConflict(error)) {
+          throw new RequestError(409, "Tournament state changed; retry the action.");
+        }
+
+        throw error;
+      }
+    }
+
+    throw new RequestError(409, "Tournament state changed; retry the action.");
   });
 
   mutationQueue = result.then(
@@ -388,13 +482,4 @@ function createSeededRandom(seed: string): () => number {
 
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
 }

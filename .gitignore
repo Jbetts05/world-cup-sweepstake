@@ -5,6 +5,7 @@ node_modules/
 dist/
 .vite/
 coverage/
+apps/api/deploy/
 playwright-report/
 test-results/
 

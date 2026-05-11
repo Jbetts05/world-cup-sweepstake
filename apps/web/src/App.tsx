@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { motion } from 'motion/react'
 import type { Match, Participant, PublicTournamentState, Team } from '@world-cup/shared'
@@ -9,6 +9,7 @@ import {
   runDraw,
   saveParticipant,
   syncTournament,
+  trackTelemetryEvent,
 } from './api'
 import { getFlagSrc } from './flags'
 import './App.css'
@@ -91,6 +92,8 @@ function App() {
   const [participantName, setParticipantName] = useState('')
   const [notice, setNotice] = useState('Loading tournament state...')
   const [isBusy, setIsBusy] = useState(false)
+  const trackedPageView = useRef(false)
+  const trackedBracketView = useRef(false)
 
   const refreshState = useCallback(async () => {
     try {
@@ -113,6 +116,31 @@ function App() {
       sessionStorage.removeItem('worldCupAdminSecret')
     }
   }, [adminSecret])
+
+  useEffect(() => {
+    if (!state || trackedPageView.current) {
+      return
+    }
+
+    trackedPageView.current = true
+    trackTelemetryEvent('page_view', {
+      provider: state.metadata.provider,
+      drawLocked: Boolean(state.draw),
+      participantCount: state.participants.length,
+    })
+  }, [state])
+
+  useEffect(() => {
+    if (!state || trackedBracketView.current) {
+      return
+    }
+
+    trackedBracketView.current = true
+    trackTelemetryEvent('bracket_viewed', {
+      knockoutMatchCount: state.matches.filter((match) => match.stage !== 'group').length,
+      drawLocked: Boolean(state.draw),
+    })
+  }, [state])
 
   const groups = useMemo(
     () => (state ? [...new Set(state.standings.map((standing) => standing.group))] : []),
@@ -247,14 +275,20 @@ function App() {
                 <button
                   type="button"
                   disabled={Boolean(state.draw) || isBusy || !hasAdminSecret}
-                  onClick={() => void runOrganiserAction(() => runDraw(adminSecret), 'Draw locked permanently.')}
+                  onClick={() => {
+                    trackTelemetryEvent('draw_clicked', { participantCount: state.participants.length })
+                    void runOrganiserAction(() => runDraw(adminSecret), 'Draw locked permanently.')
+                  }}
                 >
                   Run draw
                 </button>
                 <button
                   type="button"
                   disabled={isBusy || !hasAdminSecret}
-                  onClick={() => void runOrganiserAction(() => syncTournament(adminSecret), 'Tournament data synced.')}
+                  onClick={() => {
+                    trackTelemetryEvent('sync_clicked', { provider: state.metadata.provider })
+                    void runOrganiserAction(() => syncTournament(adminSecret), 'Tournament data synced.')
+                  }}
                 >
                   Sync data
                 </button>
@@ -279,7 +313,13 @@ function App() {
               <h2 id="organiser-heading">Tournament board</h2>
               <p className="admin-copy">Organiser controls are hidden from the public board.</p>
             </div>
-            <button type="button" onClick={() => setIsOrganiserMode(true)}>
+            <button
+              type="button"
+              onClick={() => {
+                trackTelemetryEvent('organiser_opened')
+                setIsOrganiserMode(true)
+              }}
+            >
               Organiser sign-in
             </button>
           </div>
