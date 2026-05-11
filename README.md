@@ -65,7 +65,7 @@ Prize split:
 
 ## Local development
 
-Recommended runtime is Node.js 24 for Azure Functions compatibility.
+Recommended runtime is Node.js 22 for Azure Functions compatibility.
 
 Install dependencies:
 
