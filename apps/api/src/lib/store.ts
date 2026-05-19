@@ -34,6 +34,22 @@ export interface ParticipantInput {
   fullName: string;
 }
 
+export interface ParticipantImportInput {
+  fullNames: string[];
+}
+
+export interface ParticipantImportSummary {
+  requestedCount: number;
+  addedCount: number;
+  skippedDuplicateCount: number;
+  totalParticipantCount: number;
+}
+
+export interface ParticipantImportResult {
+  state: PublicTournamentState;
+  summary: ParticipantImportSummary;
+}
+
 const maxMutationAttempts = 3;
 let mutationQueue = Promise.resolve();
 
@@ -56,7 +72,7 @@ export async function listFixtures(): Promise<Match[]> {
 }
 
 export async function saveParticipant(input: ParticipantInput): Promise<PublicTournamentState> {
-  const fullName = input.fullName.trim();
+  const fullName = normalizeParticipantName(input.fullName);
 
   if (!fullName) {
     throw new RequestError(400, "Participant full name is required.");
@@ -97,6 +113,72 @@ export async function saveParticipant(input: ParticipantInput): Promise<PublicTo
     touch(data, now);
 
     return toPublicState(data);
+  });
+}
+
+export async function importParticipants(input: ParticipantImportInput): Promise<ParticipantImportResult> {
+  const requestedNames = input.fullNames
+    .map((fullName) => normalizeParticipantName(fullName))
+    .filter((fullName) => fullName.length > 0);
+
+  if (requestedNames.length === 0) {
+    throw new RequestError(400, "Paste at least one participant full name.");
+  }
+
+  return mutateData((data) => {
+    if (data.draw) {
+      throw new RequestError(409, "The draw is locked; new participants cannot be added.");
+    }
+
+    const existingNameKeys = new Set(data.participants.map((participant) => getParticipantNameKey(participant.fullName)));
+    const importedNameKeys = new Set<string>();
+    const namesToAdd: string[] = [];
+    let skippedDuplicateCount = 0;
+
+    for (const fullName of requestedNames) {
+      const nameKey = getParticipantNameKey(fullName);
+
+      if (existingNameKeys.has(nameKey) || importedNameKeys.has(nameKey)) {
+        skippedDuplicateCount += 1;
+        continue;
+      }
+
+      importedNameKeys.add(nameKey);
+      namesToAdd.push(fullName);
+    }
+
+    if (namesToAdd.length === 0) {
+      throw new RequestError(409, "All pasted names are already in the sweepstake.");
+    }
+
+    if (data.participants.length + namesToAdd.length > 48) {
+      throw new RequestError(
+        409,
+        `Import would exceed the 48 participant limit. You can add ${48 - data.participants.length} more.`,
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    data.participants.push(
+      ...namesToAdd.map((fullName) => ({
+        id: randomUUID(),
+        fullName,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
+    touch(data, now);
+
+    return {
+      state: toPublicState(data),
+      summary: {
+        requestedCount: requestedNames.length,
+        addedCount: namesToAdd.length,
+        skippedDuplicateCount,
+        totalParticipantCount: data.participants.length,
+      },
+    };
   });
 }
 
@@ -399,6 +481,17 @@ function touch(data: StoredTournamentData, generatedAt: string): StoredTournamen
   data.generatedAt = generatedAt;
 
   return data;
+}
+
+function normalizeParticipantName(value: string): string {
+  return value
+    .replace(/^\uFEFF/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getParticipantNameKey(value: string): string {
+  return normalizeParticipantName(value).toLocaleLowerCase("en-GB");
 }
 
 function mutateData<T>(mutator: (data: StoredTournamentData) => T | Promise<T>): Promise<T> {

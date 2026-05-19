@@ -5,6 +5,7 @@ import type { Match, Participant, PublicTournamentState, Team } from '@world-cup
 import {
   deleteParticipant,
   fetchTournamentState,
+  importParticipants,
   importTeams,
   runDraw,
   saveParticipant,
@@ -83,6 +84,52 @@ function shortName(value: string): string {
   return lastInitial ? `${firstName} ${lastInitial}.` : value
 }
 
+interface BulkParticipantDraft {
+  fullName: string
+  lineNumber: number
+  duplicateInPaste: boolean
+  alreadyAdded: boolean
+}
+
+function normalizeParticipantName(value: string): string {
+  return value
+    .replace(/^\uFEFF/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getParticipantNameKey(value: string): string {
+  return normalizeParticipantName(value).toLocaleLowerCase('en-GB')
+}
+
+function parseBulkParticipants(value: string, participants: Participant[]): BulkParticipantDraft[] {
+  const existingNameKeys = new Set(participants.map((participant) => getParticipantNameKey(participant.fullName)))
+  const pastedNameKeys = new Set<string>()
+
+  return value
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const firstCell = line.split('\t')[0] ?? line
+      const fullName = normalizeParticipantName(firstCell)
+
+      if (!fullName) {
+        return undefined
+      }
+
+      const nameKey = getParticipantNameKey(fullName)
+      const duplicateInPaste = pastedNameKeys.has(nameKey)
+      pastedNameKeys.add(nameKey)
+
+      return {
+        fullName,
+        lineNumber: index + 1,
+        duplicateInPaste,
+        alreadyAdded: existingNameKeys.has(nameKey),
+      }
+    })
+    .filter((draft): draft is BulkParticipantDraft => Boolean(draft))
+}
+
 function App() {
   const [state, setState] = useState<PublicTournamentState>()
   const [isOrganiserMode, setIsOrganiserMode] = useState(() =>
@@ -90,6 +137,7 @@ function App() {
   )
   const [adminSecret, setAdminSecret] = useState(() => sessionStorage.getItem('worldCupAdminSecret') ?? '')
   const [participantName, setParticipantName] = useState('')
+  const [bulkParticipantText, setBulkParticipantText] = useState('')
   const [notice, setNotice] = useState('Loading tournament state...')
   const [isBusy, setIsBusy] = useState(false)
   const trackedPageView = useRef(false)
@@ -150,6 +198,26 @@ function App() {
   const upcomingFixtures = state?.matches.filter((match) => match.status !== 'full-time').slice(0, 4) ?? []
   const recentScores = state?.matches.filter((match) => match.status === 'full-time').slice(0, 4) ?? []
   const hasAdminSecret = Boolean(adminSecret.trim())
+  const bulkParticipantDrafts = useMemo(
+    () => parseBulkParticipants(bulkParticipantText, state?.participants ?? []),
+    [bulkParticipantText, state?.participants],
+  )
+  const importableParticipantNames = useMemo(
+    () =>
+      bulkParticipantDrafts
+        .filter((draft) => !draft.duplicateInPaste && !draft.alreadyAdded)
+        .map((draft) => draft.fullName),
+    [bulkParticipantDrafts],
+  )
+  const skippedBulkDraftCount = bulkParticipantDrafts.length - importableParticipantNames.length
+  const bulkCapacityRemaining = state ? state.metadata.totalTeamSlots - state.participants.length : 0
+  const bulkImportWouldExceedCapacity = importableParticipantNames.length > bulkCapacityRemaining
+  const canBulkImport =
+    !state?.draw &&
+    !isBusy &&
+    hasAdminSecret &&
+    importableParticipantNames.length > 0 &&
+    !bulkImportWouldExceedCapacity
 
   async function runOrganiserAction(
     action: () => Promise<PublicTournamentState>,
@@ -179,6 +247,35 @@ function App() {
       `Added ${participantName.trim()} to the sweepstake.`,
     )
     setParticipantName('')
+  }
+
+  async function handleBulkParticipantSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!adminSecret.trim()) {
+      setNotice('Enter the organiser secret before importing participants.')
+      return
+    }
+
+    if (bulkImportWouldExceedCapacity) {
+      setNotice(`Too many names. You can add ${bulkCapacityRemaining} more participant(s).`)
+      return
+    }
+
+    setIsBusy(true)
+    try {
+      trackTelemetryEvent('participants_import_clicked', { requestedCount: importableParticipantNames.length })
+      const result = await importParticipants(importableParticipantNames, adminSecret)
+      setState(result.state)
+      setBulkParticipantText('')
+      setNotice(
+        `Imported ${result.summary.addedCount} participant(s). Skipped ${result.summary.skippedDuplicateCount + skippedBulkDraftCount} duplicate(s).`,
+      )
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Participant import failed.')
+    } finally {
+      setIsBusy(false)
+    }
   }
 
   if (!state) {
@@ -261,6 +358,49 @@ function App() {
                 <button type="submit" disabled={Boolean(state.draw) || isBusy || !participantName.trim()}>
                   Add participant
                 </button>
+              </form>
+              <form className="bulk-participant-form" onSubmit={handleBulkParticipantSubmit}>
+                <label>
+                  <span>Bulk paste names</span>
+                  <textarea
+                    aria-label="Bulk participant names"
+                    value={bulkParticipantText}
+                    onChange={(event) => setBulkParticipantText(event.target.value)}
+                    placeholder={'Paste one full name per line\nJosh Betts\nAlex Morgan'}
+                    disabled={Boolean(state.draw) || isBusy}
+                    rows={5}
+                  />
+                </label>
+                <div className="bulk-import-summary" aria-live="polite">
+                  <strong>{importableParticipantNames.length} ready</strong>
+                  <span>{skippedBulkDraftCount} duplicate/already added</span>
+                  <span>{bulkCapacityRemaining} slot(s) left</span>
+                </div>
+                {bulkParticipantDrafts.length > 0 && (
+                  <div className="bulk-preview" aria-label="Bulk participant preview">
+                    {bulkParticipantDrafts.slice(0, 6).map((draft) => (
+                      <span
+                        className={draft.duplicateInPaste || draft.alreadyAdded ? 'bulk-preview-skipped' : undefined}
+                        key={`${draft.lineNumber}-${draft.fullName}`}
+                      >
+                        {draft.fullName}
+                      </span>
+                    ))}
+                    {bulkParticipantDrafts.length > 6 && <em>+{bulkParticipantDrafts.length - 6} more</em>}
+                  </div>
+                )}
+                <div className="bulk-import-actions">
+                  <button type="submit" disabled={!canBulkImport}>
+                    Import names
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy || !bulkParticipantText}
+                    onClick={() => setBulkParticipantText('')}
+                  >
+                    Clear paste
+                  </button>
+                </div>
               </form>
               <div className="button-row">
                 <button

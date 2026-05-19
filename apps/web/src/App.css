@@ -224,6 +224,7 @@ h3 {
 
 .admin-controls,
 .participant-form,
+.bulk-participant-form,
 .button-row {
   display: grid;
   gap: 0.65rem;
@@ -258,8 +259,71 @@ input {
   outline: none;
 }
 
-input:focus {
+textarea {
+  width: 100%;
+  min-height: 7.25rem;
+  resize: vertical;
+  border: 1px solid rgba(186, 218, 166, 0.17);
+  color: #f7ffe8;
+  background: rgba(255, 255, 255, 0.045);
+  padding: 0.68rem 0.75rem;
+  outline: none;
+  font: inherit;
+  line-height: 1.45;
+}
+
+input:focus,
+textarea:focus {
   border-color: rgba(217, 177, 90, 0.72);
+}
+
+.bulk-participant-form {
+  padding: 0.75rem;
+  border: 1px solid rgba(186, 218, 166, 0.12);
+  background: rgba(2, 12, 8, 0.28);
+}
+
+.bulk-import-summary,
+.bulk-import-actions,
+.bulk-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.bulk-import-summary {
+  color: rgba(238, 246, 223, 0.58);
+  font-size: 0.72rem;
+}
+
+.bulk-import-summary strong {
+  color: #e6c85e;
+}
+
+.bulk-import-summary span,
+.bulk-preview span,
+.bulk-preview em {
+  border: 1px solid rgba(186, 218, 166, 0.12);
+  padding: 0.28rem 0.45rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.bulk-preview {
+  max-height: 6.5rem;
+  overflow: hidden;
+  color: rgba(238, 246, 223, 0.74);
+  font-size: 0.72rem;
+}
+
+.bulk-preview .bulk-preview-skipped {
+  color: rgba(238, 246, 223, 0.42);
+  text-decoration: line-through;
+}
+
+.bulk-preview em {
+  color: rgba(238, 246, 223, 0.52);
+  font-style: normal;
 }
 
 button {

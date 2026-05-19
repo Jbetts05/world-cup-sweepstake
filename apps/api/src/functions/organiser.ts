@@ -1,12 +1,14 @@
 import { app } from "@azure/functions";
 import { jsonResponse, parseJsonBody, requireAdminSecret } from "../lib/http";
 import {
+  importParticipants,
   importTeamsFromFixture,
   removeParticipant,
   runDraw,
   saveParticipant,
   syncFixtureSnapshot,
   toErrorResponse,
+  type ParticipantImportInput,
   type ParticipantInput,
 } from "../lib/store";
 import { trackEvent } from "../lib/telemetry";
@@ -27,6 +29,35 @@ app.http("saveParticipant", {
       trackEvent("organiser_participant_saved", {}, { participantCount: state.participants.length });
 
       return jsonResponse(state);
+    } catch (error) {
+      const response = toErrorResponse(error);
+
+      return jsonResponse({ message: response.message }, response.status);
+    }
+  },
+});
+
+app.http("importParticipants", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "organiser/participants/import",
+  handler: async (request) => {
+    const authError = requireAdminSecret(request);
+
+    if (authError) {
+      return authError;
+    }
+
+    try {
+      const result = await importParticipants(await parseParticipantImportInput(request));
+      trackEvent("organiser_participants_imported", {}, {
+        requestedCount: result.summary.requestedCount,
+        addedCount: result.summary.addedCount,
+        skippedDuplicateCount: result.summary.skippedDuplicateCount,
+        participantCount: result.summary.totalParticipantCount,
+      });
+
+      return jsonResponse(result, 201);
     } catch (error) {
       const response = toErrorResponse(error);
 
@@ -138,5 +169,15 @@ async function parseParticipantInput(request: Parameters<typeof parseJsonBody>[0
   return {
     ...(id ? { id } : {}),
     fullName: typeof body.fullName === "string" ? body.fullName : "",
+  };
+}
+
+async function parseParticipantImportInput(request: Parameters<typeof parseJsonBody>[0]): Promise<ParticipantImportInput> {
+  const body = await parseJsonBody(request);
+
+  return {
+    fullNames: Array.isArray(body.fullNames)
+      ? body.fullNames.map((fullName) => (typeof fullName === "string" ? fullName : ""))
+      : [],
   };
 }

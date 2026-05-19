@@ -1,6 +1,7 @@
 export const clientTelemetryEvents = [
   "page_view",
   "organiser_opened",
+  "participants_import_clicked",
   "sync_clicked",
   "draw_clicked",
   "bracket_viewed",

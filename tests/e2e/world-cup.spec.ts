@@ -28,10 +28,19 @@ test.describe.serial('World Cup sweepstake', () => {
     await expect(page.getByTestId('organiser-status')).toContainText('Added Avery Stone')
     await expect(page.locator('.participant-dock').getByText('Avery Stone', { exact: true })).toBeVisible()
 
+    await page.getByLabel('Bulk participant names').fill('Blake Rivera\nCasey Lee\nAvery Stone')
+    await expect(page.getByText('2 ready')).toBeVisible()
+    await expect(page.getByText('1 duplicate/already added')).toBeVisible()
+    await page.getByRole('button', { name: 'Import names' }).click()
+    await expect(page.getByTestId('organiser-status')).toContainText('Imported 2 participant(s)')
+    await expect(page.locator('.participant-dock').getByText('Blake Rivera', { exact: true })).toBeVisible()
+    await expect(page.locator('.participant-dock').getByText('Casey Lee', { exact: true })).toBeVisible()
+
     await page.getByRole('button', { name: 'Run draw' }).click()
     await expect(page.getByTestId('organiser-status')).toContainText('Draw locked permanently')
     await expect(page.getByText('Draw locked ·')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Add participant' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Import names' })).toBeDisabled()
 
     const secondDraw = await request.post('/api/organiser/draw', {
       headers: { 'x-admin-secret': 'local-dev-secret' },
@@ -46,8 +55,8 @@ test.describe.serial('World Cup sweepstake', () => {
 
     expect(stateResponse.status()).toBe(200)
     expect(state.draw.seed).toMatch(/^WC26-LOCK-/)
-    expect(state.participants).toHaveLength(1)
-    expect(state.assignments).toHaveLength(1)
-    expect(state.leaderboard[0].participant.fullName).toBe('Avery Stone')
+    expect(state.participants).toHaveLength(3)
+    expect(state.assignments).toHaveLength(3)
+    expect(state.leaderboard.map((entry: { participant: { fullName: string } }) => entry.participant.fullName)).toContain('Avery Stone')
   })
 })

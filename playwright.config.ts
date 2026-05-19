@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT ?? 5173)
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
@@ -10,7 +12,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: `http://127.0.0.1:${webPort}`,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -27,8 +29,8 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: 'npm run dev --workspace @world-cup/web -- --host 127.0.0.1',
-      url: 'http://127.0.0.1:5173',
+      command: `npm run dev --workspace @world-cup/web -- --host 127.0.0.1 --port ${webPort}`,
+      url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: false,
       timeout: 120_000,
     },

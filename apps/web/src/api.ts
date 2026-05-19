@@ -4,9 +4,22 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
 export type TelemetryEventName =
   | 'page_view'
   | 'organiser_opened'
+  | 'participants_import_clicked'
   | 'sync_clicked'
   | 'draw_clicked'
   | 'bracket_viewed'
+
+export interface ParticipantImportSummary {
+  requestedCount: number
+  addedCount: number
+  skippedDuplicateCount: number
+  totalParticipantCount: number
+}
+
+export interface ParticipantImportResponse {
+  state: PublicTournamentState
+  summary: ParticipantImportSummary
+}
 
 export async function fetchTournamentState(): Promise<PublicTournamentState> {
   return fetchJson<PublicTournamentState>('/state')
@@ -19,6 +32,16 @@ export async function saveParticipant(
   return organiserRequest('/organiser/participants', adminSecret, {
     method: 'POST',
     body: JSON.stringify({ fullName }),
+  })
+}
+
+export async function importParticipants(
+  fullNames: string[],
+  adminSecret: string,
+): Promise<ParticipantImportResponse> {
+  return organiserRequest<ParticipantImportResponse>('/organiser/participants/import', adminSecret, {
+    method: 'POST',
+    body: JSON.stringify({ fullNames }),
   })
 }
 
@@ -60,8 +83,18 @@ async function organiserRequest(
   path: string,
   adminSecret: string,
   init: RequestInit,
-): Promise<PublicTournamentState> {
-  return fetchJson<PublicTournamentState>(path, {
+): Promise<PublicTournamentState>
+async function organiserRequest<T>(
+  path: string,
+  adminSecret: string,
+  init: RequestInit,
+): Promise<T>
+async function organiserRequest<T = PublicTournamentState>(
+  path: string,
+  adminSecret: string,
+  init: RequestInit,
+): Promise<T> {
+  return fetchJson<T>(path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',

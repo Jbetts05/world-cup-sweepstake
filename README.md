@@ -16,7 +16,7 @@ A public World Cup sweepstake website for assigning participants to countries, t
 - Azure Functions TypeScript API lives in `apps/api`.
 - Shared domain types, progression helpers, and fixture-only seed data live in `packages/shared`.
 - `GET /api/state`, `GET /api/teams`, and `GET /api/fixtures` return normalized public tournament data from the API.
-- Organiser endpoints support participant entry/removal before draw, fixture team import, one-time draw locking, and fixture sync through `/api/organiser/*`.
+- Organiser endpoints support participant entry/removal, bulk participant import before draw, fixture team import, one-time draw locking, and fixture sync through `/api/organiser/*`.
 - Local API state persists to `apps/api/data/tournament-state.local.json` by default and is ignored by Git. In Azure, the same state is stored as an ETag-protected JSON blob so draw locking and admin writes remain atomic.
 - The browser must never call WC2026 API directly; provider access belongs in the API only.
 - Azure Functions reserves built-in admin routes, so organiser write endpoints should use `/api/organiser/*`.
@@ -43,7 +43,7 @@ Deployed Functions should set `WORLD_CUP_STORAGE_BACKEND=azure-blob`. The API th
 
 ## Observability
 
-Set `APPLICATIONINSIGHTS_CONNECTION_STRING` on the deployed Function App to enable Azure Functions host telemetry. The app also emits structured `telemetry_event` traces for backend admin actions and the allowlisted frontend events `page_view`, `organiser_opened`, `sync_clicked`, `draw_clicked`, and `bracket_viewed`. Telemetry properties are sanitized and do not include participant names or admin secrets.
+Set `APPLICATIONINSIGHTS_CONNECTION_STRING` on the deployed Function App to enable Azure Functions host telemetry. The app also emits structured `telemetry_event` traces for backend admin actions and the allowlisted frontend events `page_view`, `organiser_opened`, `participants_import_clicked`, `sync_clicked`, `draw_clicked`, and `bracket_viewed`. Telemetry properties are sanitized and do not include participant names or admin secrets.
 
 ## Flag assets
 
@@ -87,6 +87,8 @@ npm run dev:web
 ```
 
 The public board loads at the Vite URL. Organiser controls are hidden by default; use the **Organiser sign-in** button or open `/?organiser=1`, then enter the local `ADMIN_SECRET` value from `apps/api/local.settings.json`.
+
+Participant setup supports either one-by-one entry or the organiser-only bulk paste box. Paste one full name per line; duplicate names are skipped and the import is blocked if it would exceed the 48-participant limit.
 
 Set `WORLD_CUP_SEED_MODE` to `demo` in `apps\api\local.settings.json` to open the local app with mocked participants, assignments, and a locked draw. Leave it as `empty` when testing organiser entry and first-draw flows from scratch. If you switch seed modes after the API has already created local data, delete `apps\api\data\tournament-state.local.json` so the next API start can seed the new mode.
 
