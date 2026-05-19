@@ -4,6 +4,12 @@ A public World Cup 2026 sweepstake site for assigning entrants to countries, fol
 
 This is a private/social sweepstake project. It is not run by, endorsed by, or affiliated with FIFA, the FIFA World Cup, WC2026 API, Microsoft, or UNICEF. UNICEF is referenced only as the intended charity beneficiary for the donation portion of the sweepstake.
 
+## Screenshots
+
+![World Cup Sweepstake dashboard overview](docs/screenshots/overview.png)
+
+![Organiser setup controls with bulk participant paste](docs/screenshots/organiser.png)
+
 ## How the sweepstake works
 
 - Entrants are added by the organiser before the draw.
