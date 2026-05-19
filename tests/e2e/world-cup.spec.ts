@@ -19,6 +19,64 @@ test.describe.serial('World Cup sweepstake', () => {
     expect(response.status()).toBe(401)
   })
 
+  test('rejects invalid bulk participant imports before the draw', async ({ request }) => {
+    const emptyImport = await request.post('/api/organiser/participants/import', {
+      headers: { 'x-admin-secret': 'local-dev-secret' },
+      data: { fullNames: [] },
+    })
+
+    expect(emptyImport.status()).toBe(400)
+    await expect(emptyImport.json()).resolves.toEqual({ message: 'Paste at least one participant full name.' })
+
+    const overCapacityImport = await request.post('/api/organiser/participants/import', {
+      headers: { 'x-admin-secret': 'local-dev-secret' },
+      data: {
+        fullNames: Array.from({ length: 49 }, (_, index) => `Capacity Tester ${index + 1}`),
+      },
+    })
+
+    expect(overCapacityImport.status()).toBe(409)
+    await expect(overCapacityImport.json()).resolves.toEqual({
+      message: 'Import would exceed the 48 participant limit. You can add 48 more.',
+    })
+
+    const seedImport = await request.post('/api/organiser/participants/import', {
+      headers: { 'x-admin-secret': 'local-dev-secret' },
+      data: { fullNames: ['Duplicate Tester'] },
+    })
+    const seedImportBody = await seedImport.json()
+
+    expect(seedImport.status()).toBe(201)
+    expect(seedImportBody.summary).toMatchObject({
+      requestedCount: 1,
+      addedCount: 1,
+      skippedDuplicateCount: 0,
+      totalParticipantCount: 1,
+    })
+
+    const duplicateOnlyImport = await request.post('/api/organiser/participants/import', {
+      headers: { 'x-admin-secret': 'local-dev-secret' },
+      data: { fullNames: [' duplicate   tester '] },
+    })
+
+    expect(duplicateOnlyImport.status()).toBe(409)
+    await expect(duplicateOnlyImport.json()).resolves.toEqual({
+      message: 'All pasted names are already in the sweepstake.',
+    })
+
+    const participantId = seedImportBody.state.participants.find(
+      (participant: { fullName: string }) => participant.fullName === 'Duplicate Tester',
+    )?.id
+
+    expect(participantId).toBeTruthy()
+
+    const cleanup = await request.delete(`/api/organiser/participants/${participantId}`, {
+      headers: { 'x-admin-secret': 'local-dev-secret' },
+    })
+
+    expect(cleanup.status()).toBe(200)
+  })
+
   test('adds a participant and locks the draw through organiser mode', async ({ page, request }) => {
     await page.goto('/?organiser=1')
 
@@ -47,6 +105,16 @@ test.describe.serial('World Cup sweepstake', () => {
     })
 
     expect(secondDraw.status()).toBe(409)
+
+    const postDrawImport = await request.post('/api/organiser/participants/import', {
+      headers: { 'x-admin-secret': 'local-dev-secret' },
+      data: { fullNames: ['Late Entrant'] },
+    })
+
+    expect(postDrawImport.status()).toBe(409)
+    await expect(postDrawImport.json()).resolves.toEqual({
+      message: 'The draw is locked; new participants cannot be added.',
+    })
   })
 
   test('keeps public state readable after draw lock', async ({ request }) => {
