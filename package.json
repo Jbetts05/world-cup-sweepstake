@@ -14,13 +14,17 @@
     "build": "npm run build --workspace @world-cup/shared && npm run build --workspace @world-cup/api && npm run build --workspace @world-cup/web",
     "typecheck": "npm run typecheck --workspace @world-cup/shared && npm run typecheck --workspace @world-cup/api && npm run typecheck --workspace @world-cup/web",
     "lint": "npm run lint --workspace @world-cup/web",
+    "test:digest": "node --import tsx --test scripts/weekly-digest/*.test.ts",
     "test:e2e": "playwright test",
+    "digest:weekly": "tsx scripts/weekly-digest/generate.ts",
+    "digest:weekly:dry-run": "tsx scripts/weekly-digest/generate.ts --dry-run",
     "package:api": "node scripts/package-api.mjs && npm install --omit=dev --prefix apps/api/deploy --workspaces=false --include-workspace-root=false --package-lock=false --no-save",
     "dev:web": "npm run dev --workspace @world-cup/web",
     "dev:api": "npm run start --workspace @world-cup/api"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "tsx": "^4.22.3",
     "typescript": "~6.0.2"
   }
 }

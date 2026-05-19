@@ -1,0 +1,55 @@
+name: Weekly Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: Optional ISO date/time to generate for
+        required: false
+  schedule:
+    # 14:15 UK time during the World Cup summer schedule.
+    - cron: "15 13 * * 5"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate weekly digest
+        id: generate
+        run: npm run digest:weekly
+        env:
+          RUN_DATE: ${{ inputs.run_date }}
+          DIGEST_TIMEZONE: Europe/London
+          DIGEST_TOP_RANKINGS: "48"
+          DIGEST_STATE_URL: https://jolly-desert-0b02b8a03.7.azurestaticapps.net/api/state
+
+      - name: Open digest review PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: digest/${{ steps.generate.outputs.digest_date }}
+          delete-branch: true
+          title: Weekly sweepstake digest draft
+          commit-message: Generate weekly sweepstake digest
+          author: Josh Betts <joshbtts@gmail.com>
+          committer: Josh Betts <joshbtts@gmail.com>
+          body: |
+            Generated weekly sweepstake digest draft.
+
+            Review the Markdown/plaintext files under `weekly-summaries/`, edit if needed, then merge when ready to use as the organiser draft.

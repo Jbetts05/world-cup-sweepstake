@@ -81,6 +81,12 @@ The organiser can:
 
 Bulk entry expects one full name per line. Duplicate names are skipped, and imports are blocked if they would exceed the 48-team limit.
 
+## Weekly digest drafts
+
+The repository includes a scheduled GitHub Actions workflow that can generate a weekly sweepstake digest draft for organiser review. It reads the same cached public state used by the website, then opens a pull request with Markdown and plaintext files under `weekly-summaries/`.
+
+During the group stage, the digest is group-first so each entrant is shown in the context of their team's group table. After group-stage qualification is complete, the digest switches to the full overall leaderboard. The workflow does not send emails automatically.
+
 ## Tech stack
 
 - React, TypeScript, Vite, and Motion for the web app.
@@ -123,6 +129,7 @@ npm run typecheck
 npm run lint
 npm run build
 npm run package:api
+npm run test:digest
 npm run test:e2e
 ```
 
