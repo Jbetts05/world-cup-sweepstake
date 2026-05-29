@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@azure/functions": "^4.7.3",
+    "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.31.0",
     "@world-cup/shared": "file:../../packages/shared"
   },

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { ManagedIdentityCredential } from "@azure/identity";
 import { BlobServiceClient, type BlockBlobClient } from "@azure/storage-blob";
 import type { StoredTournamentData } from "./stored-state";
 
@@ -37,12 +38,16 @@ export function isStateWriteConflict(error: unknown): boolean {
 
 function createStateRepository(storageBackend: string): StateRepository {
   if (storageBackend === "azure-blob") {
-    return new BlobStateRepository();
+    return new BlobStateRepository(createConnectionStringBlobServiceClient, true);
+  }
+
+  if (storageBackend === "azure-blob-identity") {
+    return new BlobStateRepository(createIdentityBlobServiceClient, false);
   }
 
   if (storageBackend !== "local") {
     throw new Error(
-      `Unsupported WORLD_CUP_STORAGE_BACKEND "${storageBackend}". Use "local" or "azure-blob".`,
+      `Unsupported WORLD_CUP_STORAGE_BACKEND "${storageBackend}". Use "local", "azure-blob", or "azure-blob-identity".`,
     );
   }
 
@@ -86,6 +91,11 @@ class LocalFileStateRepository implements StateRepository {
 class BlobStateRepository implements StateRepository {
   private blobClient: BlockBlobClient | undefined;
 
+  constructor(
+    private readonly createBlobServiceClient: () => BlobServiceClient,
+    private readonly ensureContainer: boolean,
+  ) {}
+
   async read(): Promise<StateSnapshot | undefined> {
     const blobClient = await this.getBlobClient();
 
@@ -125,25 +135,63 @@ class BlobStateRepository implements StateRepository {
       return this.blobClient;
     }
 
-    const connectionString =
-      process.env.WORLD_CUP_STORAGE_CONNECTION_STRING ?? process.env.AzureWebJobsStorage;
+    const containerName = process.env.WORLD_CUP_STATE_CONTAINER ?? "world-cup-state";
+    const blobName = process.env.WORLD_CUP_STATE_BLOB ?? "tournament-state.json";
+    const containerClient = this.createBlobServiceClient().getContainerClient(containerName);
 
-    if (!connectionString?.trim()) {
+    if (this.ensureContainer) {
+      await containerClient.createIfNotExists();
+    } else if (!(await containerClient.exists())) {
       throw new Error(
-        "Azure Blob state storage requires WORLD_CUP_STORAGE_CONNECTION_STRING or AzureWebJobsStorage.",
+        `Azure Blob state container "${containerName}" does not exist. Pre-create it before using managed identity state storage.`,
       );
     }
 
-    const containerName = process.env.WORLD_CUP_STATE_CONTAINER ?? "world-cup-state";
-    const blobName = process.env.WORLD_CUP_STATE_BLOB ?? "tournament-state.json";
-    const containerClient =
-      BlobServiceClient.fromConnectionString(connectionString).getContainerClient(containerName);
-
-    await containerClient.createIfNotExists();
     this.blobClient = containerClient.getBlockBlobClient(blobName);
 
     return this.blobClient;
   }
+}
+
+function createConnectionStringBlobServiceClient(): BlobServiceClient {
+  const connectionString =
+    process.env.WORLD_CUP_STORAGE_CONNECTION_STRING ?? process.env.AzureWebJobsStorage;
+
+  if (!connectionString?.trim()) {
+    throw new Error(
+      "Azure Blob state storage requires WORLD_CUP_STORAGE_CONNECTION_STRING or AzureWebJobsStorage.",
+    );
+  }
+
+  return BlobServiceClient.fromConnectionString(connectionString);
+}
+
+function createIdentityBlobServiceClient(): BlobServiceClient {
+  const accountUrl = resolveIdentityStorageAccountUrl();
+  const clientId = process.env.WORLD_CUP_STORAGE_MANAGED_IDENTITY_CLIENT_ID;
+
+  return new BlobServiceClient(
+    accountUrl,
+    clientId ? new ManagedIdentityCredential({ clientId }) : new ManagedIdentityCredential(),
+  );
+}
+
+function resolveIdentityStorageAccountUrl(): string {
+  const accountUrl = process.env.WORLD_CUP_STORAGE_ACCOUNT_URL?.trim();
+
+  if (accountUrl) {
+    return accountUrl.replace(/\/+$/, "");
+  }
+
+  const accountName = process.env.WORLD_CUP_STORAGE_ACCOUNT_NAME?.trim();
+
+  if (accountName) {
+    return `https://${accountName}.blob.core.windows.net`;
+  }
+
+  throw new Error(
+    "Managed identity Blob state storage requires WORLD_CUP_STORAGE_ACCOUNT_URL or WORLD_CUP_STORAGE_ACCOUNT_NAME.",
+  );
 }
 
 function serialize(data: StoredTournamentData): string {
